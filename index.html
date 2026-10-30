@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor BIM IFC | Steel Frame & Modulación Hebel</title>
+    <link rel="stylesheet" href="app.css">
+    
+    <!-- Librerías locales 3D y Utilitarios -->
+    <script src="lib/three.min.js"></script>
+    <script src="lib/OrbitControls.js"></script>
+    <script src="lib/TransformControls.js"></script>
+    <script src="lib/xlsx.full.min.js"></script>
+</head>
+<body>
+
+    <!-- ── BARRA SUPERIOR (HEADER) ── -->
+    <header class="top-header">
+        <div class="brand">
+            <span class="brand-icon">🏗️</span>
+            <div>
+                <div class="brand-title">BIM FRAME VIEWER</div>
+                <div class="brand-subtitle">Steel Framing • Tophats • Paneles Hebel</div>
+            </div>
+        </div>
+
+        <div class="header-actions">
+            <!-- Carga de Archivos IFC -->
+            <input type="file" id="ifc-file-input" accept=".ifc" style="display: none;">
+            <button id="btn-open-ifc" class="btn btn-primary" title="Cargar archivo IFC de Steel Frame">
+                📂 Abrir IFC
+            </button>
+            <button id="btn-load-sample" class="btn" title="Cargar modelo de muestra PSF760">
+                🧪 Muestra PSF760
+            </button>
+
+            <!-- Proyecto (Guardar / Cargar JSON) -->
+            <input type="file" id="json-project-input" accept=".json" style="display: none;">
+            <button id="btn-save-project" class="btn" title="Guardar estado del proyecto en JSON">
+                💾 Guardar JSON
+            </button>
+            <button id="btn-load-project" class="btn" title="Cargar proyecto previamente guardado">
+                📥 Cargar JSON
+            </button>
+
+            <!-- Exportaciones BOM -->
+            <button id="btn-export-excel" class="btn btn-success" title="Descargar cómputo métrico a Excel (.xlsx)">
+                📊 Exportar Excel
+            </button>
+            <button id="btn-print-report" class="btn" title="Imprimir / Guardar como PDF">
+                🖨️ Imprimir / PDF
+            </button>
+        </div>
+    </header>
+
+    <!-- ── CONTENEDOR PRINCIPAL ── -->
+    <main class="app-container">
+
+        <!-- ── PANEL IZQUIERDO: GALERÍA DE BLOQUES ── -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span>Galería de Bloques 3D</span>
+                <span id="active-category-badge" class="badge badge-blue">Hebel 75mm</span>
+            </div>
+
+            <!-- Pestañas de Categoría -->
+            <div class="tabs-container">
+                <button class="tab-btn active" data-category="hebel_75">Hebel 75mm</button>
+                <button class="tab-btn" data-category="hebel_50">Hebel 50mm</button>
+                <button class="tab-btn" data-category="tophats">Tophats</button>
+            </div>
+
+            <!-- Lista de Componentes del Catálogo -->
+            <div class="catalog-list" id="catalog-list-container">
+                <!-- Se llena dinámicamente mediante block-catalog.js -->
+            </div>
+        </aside>
+
+        <!-- ── ÁREA CENTRAL: VIEWPORT 3D ── -->
+        <section class="viewport-container" id="viewport-container">
+            <canvas id="three-canvas"></canvas>
+
+            <!-- HUD Flotante de Atajos -->
+            <div class="viewport-overlay">
+                <div class="hud-pill">
+                    <span>💡 <b>Atajos:</b></span>
+                    <span><kbd>R</kbd> Girar Z</span>
+                    <span><kbd>E</kbd> Girar X</span>
+                    <span><kbd>T</kbd> Girar Y</span>
+                    <span><kbd>Supr</kbd> Eliminar</span>
+                    <span><kbd>Clic</kbd> Colocar</span>
+                    <span><kbd>Esc</kbd> Cancelar</span>
+                </div>
+                <div class="hud-pill" id="hud-model-info" style="display: none;">
+                    <span>📁 <b id="hud-model-name">Modelo: -</b></span>
+                </div>
+            </div>
+
+            <!-- Barra flotante de herramientas de visualización -->
+            <div class="viewport-tools">
+                <button id="btn-view-iso" class="btn btn-sm" title="Vista Isométrica">Isometric</button>
+                <button id="btn-view-front" class="btn btn-sm" title="Vista Frontal">Frontal</button>
+                <button id="btn-view-top" class="btn btn-sm" title="Vista en Planta">Planta</button>
+                <button id="btn-toggle-ifc" class="btn btn-sm" title="Ocultar / Mostrar estructura de acero">👁️ IFC On/Off</button>
+                <button id="btn-toggle-floor-grid" class="btn btn-sm" title="Ocultar / Mostrar Grilla de Piso">🌐 Grilla: On</button>
+                <button id="btn-toggle-exterior" class="btn btn-sm" title="Forzar que los paneles crezcan hacia afuera de la casa">🏠 Exterior: Off</button>
+                <button id="btn-toggle-grid" class="btn btn-sm" title="Activar/Desactivar Snap a Grilla de 50mm">🧲 Snap: 50mm</button>
+                <button id="btn-clear-blocks" class="btn btn-sm btn-danger" title="Eliminar todos los bloques colocados">🗑️ Limpiar Bloques</button>
+            </div>
+        </section>
+
+        <!-- ── PANEL DERECHO: INSPECTOR & CÓMPUTO MÉTRICO (BOM) ── -->
+        <aside class="inspector">
+            <!-- Resumen de Métricas Globales -->
+            <div class="bom-summary-box">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary);">Cómputo en Vivo (BOM)</span>
+                    <span id="bom-total-units" class="badge badge-blue">0 Bloques</span>
+                </div>
+
+                <div class="bom-metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-val" id="metric-area">0.00 <span style="font-size: 12px;">m²</span></div>
+                        <div class="metric-label">Área Total Hebel</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-val" id="metric-length">0.00 <span style="font-size: 12px;">m</span></div>
+                        <div class="metric-label">Metros Tophat</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-val" id="metric-weight">0.0 <span style="font-size: 12px;">kg</span></div>
+                        <div class="metric-label">Peso Estimado</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-val" id="metric-types">0</div>
+                        <div class="metric-label">Tipos Distintos</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabla de Materiales -->
+            <div class="bom-table-container">
+                <table class="bom-table">
+                    <thead>
+                        <tr>
+                            <th>Componente</th>
+                            <th style="text-align: center;">Cant.</th>
+                            <th style="text-align: right;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bom-table-body">
+                        <tr>
+                            <td colspan="3" style="text-align: center; color: var(--text-secondary); padding: 20px;">
+                                No hay bloques colocados todavía.<br>
+                                Selecciona un panel de la galería y haz clic en el muro.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Inspector de Selección -->
+            <div class="selection-box" id="selection-inspector">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px;">
+                    Propiedades del Bloque
+                </div>
+                <div id="inspector-content">
+                    <p style="font-size: 11px; color: var(--text-secondary);">Ningún bloque seleccionado.</p>
+                </div>
+            </div>
+        </aside>
+
+    </main>
+
+    <!-- ── MODAL DE PROGRESO DE CARGA ── -->
+    <div class="modal-overlay" id="loading-modal">
+        <div class="modal-content">
+            <h3 style="font-size: 16px; margin-bottom: 8px;" id="modal-title">Cargando Modelo IFC...</h3>
+            <p style="font-size: 12px; color: var(--text-secondary);" id="modal-subtitle">Procesando estructura de acero en WebAssembly</p>
+            <div class="progress-bar-container">
+                <div class="progress-fill" id="modal-progress-fill"></div>
+            </div>
+            <span style="font-size: 11px; color: var(--text-secondary);" id="modal-percent">0%</span>
+        </div>
+    </div>
+
+    <!-- Script Principal (Módulo ES) -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
